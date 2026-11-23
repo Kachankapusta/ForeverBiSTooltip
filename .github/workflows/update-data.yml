@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths: ['.github/workflows/update-data.yml', 'tools/prepare-release.sh', 'tools/github-release.sh', 'CHANGELOG.md']
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '7,22,37,52 * * * *'
       timezone: 'Europe/Warsaw'
   workflow_dispatch:
 
