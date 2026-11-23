@@ -31,8 +31,10 @@ jobs:
         with:
           node-version: '24'
       - name: Run tests
+        id: tests
         run: node --test
-      - name: Refresh and commit BiS data
+      - name: Import and compare WowTBC data
+        id: import
         shell: bash
         run: |
           old="$RUNNER_TEMP/forever-bis-data.before.lua"
@@ -43,32 +45,48 @@ jobs:
           if [[ "$changed" == 'false' ]]; then
             mv "$old" Data.lua
             echo 'WowTBC data is unchanged.'
-            exit 0
+          else
+            echo 'WowTBC data has changed.'
           fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+      - name: Commit and push updated BiS data
+        id: commit
+        if: steps.import.outputs.changed == 'true'
+        shell: bash
+        run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- Data.lua
           if [[ -n "$CURSEFORGE_PROJECT_ID" ]]; then
-            [[ "$CURSEFORGE_PROJECT_ID" =~ ^[1-9][0-9]*$ ]]
+            if [[ ! "$CURSEFORGE_PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+              echo '::error::The CURSEFORGE_PROJECT_ID Actions variable must be a positive integer.'
+              exit 1
+            fi
             git commit -m 'Update WoW Forever BiS data' -m "CurseForge-Project: $CURSEFORGE_PROJECT_ID"
           else
             git commit -m 'Update WoW Forever BiS data'
           fi
           git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Prepare a pending CurseForge release
         id: release
         if: vars.CURSEFORGE_PROJECT_ID != ''
         shell: bash
         run: |
-          [[ "$CURSEFORGE_PROJECT_ID" =~ ^[1-9][0-9]*$ ]]
+          if [[ ! "$CURSEFORGE_PROJECT_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::The CURSEFORGE_PROJECT_ID Actions variable must be a positive integer.'
+            exit 1
+          fi
           data_commit="$(git log -1 --format=%H -- Data.lua)"
           if ! git log -1 --format=%B "$data_commit" | grep -Fxq "CurseForge-Project: $CURSEFORGE_PROJECT_ID"; then
             echo 'No data update has been queued for this CurseForge project.'
+            echo 'status=not_queued' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           receipt="curseforge/$CURSEFORGE_PROJECT_ID/$data_commit"
           if git show-ref --verify --quiet "refs/tags/$receipt"; then
             echo 'This data update has already been uploaded.'
+            echo 'status=already_uploaded' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           package_dir="$RUNNER_TEMP/forever-bis-release/ForeverBiSTooltip"
@@ -84,7 +102,10 @@ jobs:
           git archive "$data_commit" -- "${package_files[@]}" | tar -x -C "$package_dir"
           toc="$package_dir/ForeverBiSTooltip.toc"
           base_version="$(sed -nE 's/^## Version: +([0-9]+\.[0-9]+\.[0-9]+)\r?$/\1/p' "$toc")"
-          [[ -n "$base_version" ]]
+          if [[ -z "$base_version" ]]; then
+            echo '::error file=ForeverBiSTooltip.toc::Expected a version in X.Y.Z format for the selected data commit.'
+            exit 1
+          fi
           version="$base_version.$(git rev-list --count "$data_commit")"
           sed -i -E "s/^## Version: .*/## Version: $version/" "$toc"
           touch -r "$package_dir/Data.lua" "$toc"
@@ -94,6 +115,7 @@ jobs:
           changelog="$RUNNER_TEMP/forever-bis-changelog.md"
           printf '%s\n' 'Updated the WoW Forever Pre-Raid and Realistic recommendations from WowTBC.' > "$changelog"
           {
+            echo 'status=ready'
             echo "zip=$zip_file"
             echo "version=$version"
             echo "changelog=$changelog"
@@ -101,6 +123,7 @@ jobs:
             echo "data_commit=$data_commit"
           } >> "$GITHUB_OUTPUT"
       - name: Upload to CurseForge
+        id: upload
         if: steps.release.outputs.zip != ''
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
@@ -108,12 +131,91 @@ jobs:
           RELEASE_ZIP: ${{ steps.release.outputs.zip }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_CHANGELOG: ${{ steps.release.outputs.changelog }}
+        shell: bash
+        run: |
+          file_id="$(node tools/release-tools.mjs upload "$RELEASE_ZIP" "$RELEASE_VERSION" "$RELEASE_CHANGELOG")"
+          echo "file_id=$file_id" >> "$GITHUB_OUTPUT"
+          echo "CurseForge accepted file $file_id."
+      - name: Record CurseForge upload
+        id: receipt
+        if: steps.upload.outputs.file_id != ''
+        env:
+          RELEASE_FILE_ID: ${{ steps.upload.outputs.file_id }}
           RELEASE_RECEIPT: ${{ steps.release.outputs.receipt }}
           RELEASE_COMMIT: ${{ steps.release.outputs.data_commit }}
         shell: bash
         run: |
-          file_id="$(node tools/release-tools.mjs upload "$RELEASE_ZIP" "$RELEASE_VERSION" "$RELEASE_CHANGELOG")"
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            tag -a "$RELEASE_RECEIPT" "$RELEASE_COMMIT" -m "CurseForge file $file_id"
+            tag -a "$RELEASE_RECEIPT" "$RELEASE_COMMIT" -m "CurseForge file $RELEASE_FILE_ID"
           git push origin "refs/tags/$RELEASE_RECEIPT"
-          echo "CurseForge accepted file $file_id."
+      - name: Write run summary
+        if: always()
+        env:
+          TESTS: ${{ steps.tests.outcome }}
+          IMPORT: ${{ steps.import.outcome }}
+          CHANGED: ${{ steps.import.outputs.changed }}
+          COMMIT: ${{ steps.commit.outcome }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+          PACKAGE: ${{ steps.release.outcome }}
+          RELEASE_STATUS: ${{ steps.release.outputs.status }}
+          UPLOAD: ${{ steps.upload.outcome }}
+          FILE_ID: ${{ steps.upload.outputs.file_id }}
+          VERSION: ${{ steps.release.outputs.version }}
+          RECEIPT: ${{ steps.receipt.outcome }}
+        shell: bash
+        run: |
+          step_result() {
+            case "$1" in
+              success) printf 'Passed' ;;
+              failure) printf 'Failed' ;;
+              cancelled) printf 'Cancelled' ;;
+              *) printf 'Skipped' ;;
+            esac
+          }
+
+          import_result="$(step_result "$IMPORT")"
+          case "$CHANGED" in
+            true) import_result='Data changed' ;;
+            false) import_result='No changes' ;;
+          esac
+
+          commit_result="$(step_result "$COMMIT")"
+          if [[ -n "$COMMIT_SHA" ]]; then
+            commit_result="Pushed [${COMMIT_SHA:0:7}]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$COMMIT_SHA)"
+          fi
+
+          package_result="$(step_result "$PACKAGE")"
+          case "$RELEASE_STATUS" in
+            ready) package_result="Prepared version $VERSION" ;;
+            not_queued) package_result='Skipped — no release queued' ;;
+            already_uploaded) package_result='Skipped — already uploaded' ;;
+          esac
+          if [[ "$PACKAGE" == 'skipped' && -z "$CURSEFORGE_PROJECT_ID" ]]; then
+            package_result='Skipped — project ID is missing'
+          fi
+
+          upload_result="$(step_result "$UPLOAD")"
+          if [[ -n "$FILE_ID" ]]; then
+            upload_result="Accepted [file $FILE_ID](https://www.curseforge.com/wow/addons/forever-bis-tooltip/files/$FILE_ID)"
+          elif [[ "$UPLOAD" == 'failure' ]]; then
+            upload_result='Failed to confirm upload'
+          fi
+
+          {
+            echo '### WowTBC update'
+            echo
+            printf 'Trigger: **%s**\n\n' "$GITHUB_EVENT_NAME"
+            echo '| Step | Result |'
+            echo '| --- | --- |'
+            printf '| Tests | %s |\n' "$(step_result "$TESTS")"
+            printf '| Import and compare | %s |\n' "$import_result"
+            printf '| Commit and push Data.lua | %s |\n' "$commit_result"
+            printf '| Prepare CurseForge release | %s |\n' "$package_result"
+            printf '| Upload to CurseForge | %s |\n' "$upload_result"
+            printf '| Record CurseForge upload | %s |\n' "$(step_result "$RECEIPT")"
+            echo
+            echo 'For error details, expand the failed step in the update-data job logs.'
+            if [[ -n "$FILE_ID" && "$RECEIPT" != 'success' ]]; then
+              echo 'CurseForge accepted the file. Check the upload receipt before rerunning to avoid a duplicate.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
