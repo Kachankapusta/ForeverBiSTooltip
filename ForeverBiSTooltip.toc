@@ -4,7 +4,7 @@
 ## Notes: Best-in-slot gear options and enchant recommendations for WoW Forever based on wowtbc.gg.
 ## Notes-ruRU: Варианты лучшей экипировки и рекомендации по зачарованиям для WoW Forever по данным wowtbc.gg.
 ## X-Reference: Original BiS-Tooltip by Hellixoid — https://www.curseforge.com/wow/addons/bis-tooltip
-## Version: 0.1.1
+## Version: 0.1.2
 ## SavedVariables: ForeverBiSTooltipDB
 ## SavedVariablesPerCharacter: ForeverBiSTooltipCharDB
 ## OptionalDeps: Auctionator

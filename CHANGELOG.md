@@ -1,3 +1,7 @@
+## 0.1.2
+
+- Changed the Survival Melee Hunter tooltip icon to the Tallstrider icon.
+
 ## 0.1.1
 
 - Restored the Survival Melee Hunter icon in item tooltips using the standard Survival icon.
