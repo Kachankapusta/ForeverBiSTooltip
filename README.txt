@@ -1,77 +1,75 @@
 Forever BiS Tooltip
 
-Новый самостоятельный аддон для WoW Forever, Interface 16001.
-Открытие: /bistooltip, /fbt или кнопка миникарты.
+A standalone addon for WoW Forever, Interface 16001.
+Open it with /bistooltip, /fbt, or the minimap button.
 
-Выберите класс и специализацию. Сейчас доступны только дорейдовые списки:
-обычный и Realistic. Переключатель Realistic меняет и окно, и подсказки.
-Фильтр «Только выбранный спек» использует выбор в окне; автоматического
-определения специализации нет. Настройки выбора сохраняются для персонажа.
+Choose a class and specialization to browse the regular and Realistic
+Pre-Raid lists. The Realistic toggle applies to the gear window and item
+tooltips. The Only selected spec option follows the specialization you
+choose in the window. Your selection is saved per character.
 
-Окно использует компактную сетку в бронзовой палитре Forever.
-Каждый слот занимает одну строку. Первая страница начинается с BiS.
-При узком окне следующие предметы видны на следующих страницах.
-При изменении ширины число иконок на странице пересчитывается сразу.
-Когда весь список помещается в окно, кнопки страниц скрываются.
-Имена предметов и источники получения доступны при наведении.
-Настройки доступны в меню WoW «Настройки → Дополнения → Forever BiS Tooltip».
-Шестерёнка в окне BiS открывает эту же страницу. Размер окна меняется
-перетаскиванием нижнего правого угла.
+The window uses a compact grid in the bronze style of WoW Forever. Each
+equipment slot occupies one row, with the BiS pick on the first page.
+Resizing the window changes how many icons fit on each page. Page controls
+disappear when all items fit. Hover over an item to see its name and source.
+Open Settings → AddOns → Forever BiS Tooltip in WoW or click the gear icon
+in the BiS window. Drag the bottom-right corner to resize the window.
 
-В подсказке Top 1, Top 2 и дальше обозначают позицию предмета в списке.
-Если предмет указан в двух слотах одной специализации, показана лучшая позиция.
-Зачарования и рекомендованные камни показаны маленькими иконками
-рядом с соответствующим слотом. Подсказка чар показывает эффект
-и материалы для крафта или квестового обмена.
-Подсказка предмета показывает его игровые свойства и сокеты.
-Иконки рекомендованных камней предусмотрены для списков, содержащих такие
-рекомендации. Текущий источник Pre-Raid их не содержит.
-Статусы «Надето» и «В сумках» учитывают только текущего персонажа.
-Ctrl при соответствующей настройке нужно зажать до наведения курсора.
+In tooltips, Top 1, Top 2, and so on show an item's position in the list.
+If an item appears in two slots for the same specialization, the tooltip
+shows its highest rank. Icons next to each slot show enchants and gem
+recommendations when available. Enchant tooltips show effects and materials
+for crafting or quest exchanges. Item tooltips show item stats and sockets.
+The current Pre-Raid source has no gem recommendations. Equipped and In bags
+refer to the current character. If Ctrl only is enabled, hold Ctrl before
+hovering over an item.
 
-ЛКМ по чарке или камню добавляет один набор материалов в раздел «Покупки».
-ПКМ убирает один набор, Shift + ЛКМ открывает рецепт или предмет.
-Окно «Покупки» открывается из BiS или боковой кнопкой справа у аукциона.
-У аукциона оно пристыковывается справа и закрывается той же кнопкой
-или вместе с аукционом.
-В нём видно, сколько материалов уже есть и сколько требуется. Список
-сохраняется отдельно для каждого персонажа.
+Left-click an enchant or gem to add one set of materials to the shopping
+list. Right-click removes one set, and Shift + left-click opens the recipe
+or item for inspection. Open Shopping from the BiS window or from the side
+tab at the auction house. The panel docks on the right of the auction house
+and closes with the same tab or when you close the auction house.
+The shopping list shows how many materials you own and how many you need,
+and it is saved per character.
 
-При установленном Auctionator недостающие покупаемые предметы автоматически
-попадают в список «Forever BiS Shopping». Он обновляется при изменении запасов.
-Привязанные предметы и золото для квестовых обменов показаны в разделе
-«Покупки».
+If Auctionator is installed, missing materials that can be purchased are
+sent to the Forever BiS Shopping list. It updates as your inventory changes.
+The Shopping panel also shows bound items and gold needed for quest exchanges.
 
-Источник: https://wowtbc.gg/warcraftforever/bis-list/
-Дата импорта показана внизу окна. Аддон использует встроенную базу;
-во время игры обращения к сайту не выполняются.
+Gear recommendations come from https://wowtbc.gg/warcraftforever/bis-list/
+The footer shows the date of the bundled data snapshot. The addon uses
+that snapshot in-game.
 
-Для обновления базы из каталога AddOns при установленном Node.js:
+To update the database, run this command from the AddOns folder with Node.js
+installed.
+
 node ForeverBiSTooltip/tools/import-wowtbc.mjs
 
-Проверка импортера:
+To test the importer, run the following command.
+
 node --test ForeverBiSTooltip/tests/import-wowtbc.test.mjs
 
-Импортер загружает публичные данные всех специализаций и заменяет Data.lua
-только после успешной обработки всех страниц. Списки по уровням не импортируются.
-После обновления базы требуется /reload.
+The importer downloads public data for every specialization and replaces
+Data.lua after all pages have been processed successfully. Level-capped
+lists are excluded. Run /reload in WoW after updating the database.
 
-Чтобы добавить фазу, необходимо импортировать соответствующие данные
-источника и добавить её описание в stages в Core.lua. Неподдерживаемую
-структуру источника импортер отклоняет, сохраняя предыдущую базу.
+To add a phase, import its data and add its description to stages in
+Core.lua. If the source structure is unsupported, the importer reports
+the error and keeps the existing database.
 
-Публикация
+Publishing
 
-В ветке main GitHub Actions обновляет данные в 09:17 и 21:17 по времени
-Варшавы. Ручной запуск доступен в Actions → Update WowTBC data.
-Workflow запускает тесты и сохраняет Data.lua при изменении подборок.
+On main, GitHub Actions checks for data updates at 09:17 and 21:17 Warsaw
+time. To run it manually, select Update WowTBC data in Actions.
+The workflow runs tests and commits Data.lua when the recommendations change.
 
-Для автозагрузки создай проект CurseForge для WoW Forever 1.60.1 и отправь
-первый ZIP на модерацию. Затем в GitHub Settings → Secrets and variables →
-Actions добавь токен автора как секрет CF_API_TOKEN, а числовой ID проекта
-как переменную CURSEFORGE_PROJECT_ID.
+To enable automatic uploads, create a CurseForge project for WoW Forever
+1.60.1 and submit the first ZIP for moderation. In GitHub Settings →
+Secrets and variables → Actions, add the CurseForge author token as
+the CF_API_TOKEN secret and the numeric project ID as the
+CURSEFORGE_PROJECT_ID variable.
 
-Следующее изменение подборок поставит выпуск в очередь. После загрузки
-workflow добавит тег curseforge/<ID проекта>/<коммит> с номером файла.
-Если шаг загрузки завершился таймаутом, проверь файлы в кабинете автора
-перед повторным запуском.
+The next data change queues a release. After a successful upload, the
+workflow records the CurseForge file ID in the tag
+curseforge/<project ID>/<commit>. If the upload times out, check the
+author dashboard before retrying.
