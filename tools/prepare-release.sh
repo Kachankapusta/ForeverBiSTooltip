@@ -46,7 +46,7 @@ prepare_notes() {
   local data_commit code_commit previous_version updated_at
   data_commit="$(git log -1 --first-parent --format=%H "$release_commit" -- Data.lua)"
   code_commit="$(git log -1 --first-parent --format=%H "$release_commit" -- CHANGELOG.md)"
-  if [[ "$release_commit" != "$code_commit" ]] && ! is_data_update "$data_commit"; then
+  if [[ "$candidate" != "$code_commit" ]] && ! is_data_update "$data_commit"; then
     echo 'No release has been queued.'
     echo 'status=not_queued' >> "$GITHUB_OUTPUT"
     exit 0
@@ -118,7 +118,7 @@ download_curseforge_zip() {
 
 prepare_release() {
   local tag="$PENDING_TAG" previous_tag="$PUBLISHED_TAG"
-  local release_commit version notes zip_file file_id expected_hash='' release_info zip_hash
+  local candidate release_commit version notes zip_file file_id expected_hash='' release_info zip_hash
   notes="$RUNNER_TEMP/forever-bis-changelog.md"
   release_info="$RUNNER_TEMP/forever-bis-release-info.md"
 
@@ -135,15 +135,22 @@ prepare_release() {
   else
     if [[ -n "$BACKFILL_TAG" ]]; then
       release_commit="$(git rev-parse "$BACKFILL_TAG^{commit}")"
+      candidate="$release_commit"
       previous_tag="$(git describe --first-parent --abbrev=0 --match "curseforge/$project/*" \
         --exclude "$BACKFILL_TAG" "$release_commit" 2>/dev/null || true)"
     else
-      release_commit="$(git log -1 --first-parent --format=%H -- Data.lua CHANGELOG.md)"
-      if [[ -n "$previous_tag" && "$release_commit" == "$(git rev-parse "$previous_tag^{commit}")" ]]; then
+      candidate="$(git log -1 --first-parent --format=%H -- Data.lua CHANGELOG.md)"
+      if [[ -n "$previous_tag" ]] && git merge-base --is-ancestor "$candidate" "$previous_tag"; then
+        release_commit="$(git rev-parse "$previous_tag^{commit}")"
         echo 'status=already_published' >> "$GITHUB_OUTPUT"
         echo "github_url=$EXISTING_GITHUB_URL" >> "$GITHUB_OUTPUT"
         echo "curseforge_file_id=$(curseforge_receipt "$release_commit" || true)" >> "$GITHUB_OUTPUT"
         exit 0
+      fi
+      release_commit="$(git rev-parse HEAD)"
+      if ! git diff --quiet "$candidate" "$release_commit" -- "${addon_files[@]}" Data.lua; then
+        echo '::error file=CHANGELOG.md::Packaged code changed after the release notes. Add notes and bump the TOC version for these changes.'
+        exit 1
       fi
     fi
     prepare_notes
