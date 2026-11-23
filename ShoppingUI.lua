@@ -34,7 +34,7 @@ end
 
 local function ShowRowTooltip(row)
     if not row.tooltipID then return end
-    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    GameTooltip:SetOwner(row, "ANCHOR_CURSOR")
     if row.tooltipKind == "spell" then
         GameTooltip:SetSpellByID(row.tooltipID)
     else
@@ -124,7 +124,7 @@ function ns.UpdateShoppingWindow()
         local height = material.bindOnPickup and 35 or 22
         SetRowTooltip(row, "item", material.id)
         PositionRow(row, y, height)
-        row.name:SetText(material.isGold and L["Gold"] or material.name)
+        row.name:SetText(material.link or (material.isGold and L["Gold"] or material.name))
         row.binding:SetShown(material.bindOnPickup == true)
         row.amount:SetText(QuantityText(material.owned, material.isGold) .. " / " .. QuantityText(material.required, material.isGold))
         if material.owned and material.owned >= material.required then
@@ -144,7 +144,7 @@ function ns.UpdateShoppingWindow()
         row.key = entry.key
         SetRowTooltip(row, entry.tooltipKind, entry.tooltipID)
         PositionRow(row, y, 26)
-        row.name:SetText(entry.name)
+        row.name:SetText(entry.link or entry.name)
         row.amount:SetText("×" .. entry.quantity)
         y = y + 26
     end

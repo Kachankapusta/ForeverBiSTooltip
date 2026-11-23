@@ -11,6 +11,18 @@ local function Public(value)
     if not issecretvalue or not issecretvalue(value) then return value end
 end
 
+local function PublicLink(value)
+    value = Public(value)
+    if type(value) == "string" and value ~= "" then return value end
+end
+
+local function RequestItemData(id)
+    if not requested[id] and C_Item.RequestLoadItemDataByID then
+        requested[id] = true
+        C_Item.RequestLoadItemDataByID(id)
+    end
+end
+
 local function ShoppingMaterials(entry, isGem)
     if entry.requirements and #entry.requirements > 0 then return entry.requirements end
     if entry.reagents and #entry.reagents > 0 then return entry.reagents end
@@ -60,6 +72,18 @@ local function LegacyTooltip(key)
     if kind == "item" or kind == "spell" then return kind, tonumber(id) end
 end
 
+local function EnhancementLink(kind, id)
+    if not id then return end
+    if kind == "spell" then
+        if C_Spell and C_Spell.GetSpellLink then return PublicLink(C_Spell.GetSpellLink(id)) end
+        return
+    end
+    local _, link = C_Item.GetItemInfo(id)
+    link = PublicLink(link)
+    if not link then RequestItemData(id) end
+    return link
+end
+
 function ns.GetShoppingEntries()
     local result = {}
     for key, entry in pairs(ShoppingEntries() or {}) do
@@ -67,6 +91,7 @@ function ns.GetShoppingEntries()
         if not tooltipID then tooltipKind, tooltipID = LegacyTooltip(key) end
         result[#result + 1] = {
             key = key, name = entry.name, quantity = entry.quantity, tooltipKind = tooltipKind, tooltipID = tooltipID,
+            link = EnhancementLink(tooltipKind, tooltipID),
         }
     end
     table.sort(result, function(a, b)
@@ -87,8 +112,9 @@ end
 local function ResolveMaterial(row)
     local id = row.id
     if not id then return end
-    local name, _, _, _, _, _, _, _, _, _, _, _, _, bindType = C_Item.GetItemInfo(id)
+    local name, link, _, _, _, _, _, _, _, _, _, _, _, bindType = C_Item.GetItemInfo(id)
     name, bindType = Public(name), Public(bindType)
+    row.link = PublicLink(link)
     if type(name) == "string" and name ~= "" then row.name, row.localizedName = name, name end
     local binding = Enum and Enum.ItemBind
     if type(bindType) == "number" and binding then
@@ -96,10 +122,7 @@ local function ResolveMaterial(row)
             (bindType ~= binding.None and bindType ~= binding.OnEquip and bindType ~= binding.OnUse)
         row.bindingKnown = true
     end
-    if (not row.localizedName or not row.bindingKnown) and not requested[id] and C_Item.RequestLoadItemDataByID then
-        requested[id] = true
-        C_Item.RequestLoadItemDataByID(id)
-    end
+    if not row.link or not row.localizedName or not row.bindingKnown then RequestItemData(id) end
     row.owned = Public(C_Item.GetItemCount(id, true, false, true, true))
 end
 

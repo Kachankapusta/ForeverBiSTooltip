@@ -1,3 +1,8 @@
+## 0.1.4
+
+- Show Shopping List tooltips next to the mouse cursor.
+- Display native item and spell links for reagents, enchants, and gems in the Shopping List.
+
 ## 0.1.3
 
 - Show standard in-game tooltips when hovering over tracked enchants, gems, and their materials in the Shopping List.
