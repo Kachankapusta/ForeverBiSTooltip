@@ -77,8 +77,11 @@ jobs:
           if ! git cat-file -e "$data_commit:README.md" 2>/dev/null; then
             readme=README.txt
           fi
-          git archive "$data_commit" -- ForeverBiSTooltip.toc Locale.lua Data.lua Core.lua Shopping.lua \
-            UI.lua ShoppingUI.lua Tooltip.lua "$readme" | tar -x -C "$package_dir"
+          package_files=(ForeverBiSTooltip.toc Locale.lua Data.lua Core.lua Shopping.lua UI.lua ShoppingUI.lua Tooltip.lua "$readme")
+          if git cat-file -e "$data_commit:LICENSE" 2>/dev/null; then
+            package_files+=(LICENSE)
+          fi
+          git archive "$data_commit" -- "${package_files[@]}" | tar -x -C "$package_dir"
           toc="$package_dir/ForeverBiSTooltip.toc"
           base_version="$(sed -nE 's/^## Version: +([0-9]+\.[0-9]+\.[0-9]+)\r?$/\1/p' "$toc")"
           [[ -n "$base_version" ]]

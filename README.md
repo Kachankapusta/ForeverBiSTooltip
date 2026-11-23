@@ -25,3 +25,7 @@ Place the `ForeverBiSTooltip` folder in `Interface/AddOns`, then open the gear b
 Recommendations come from [WowTBC.gg](https://wowtbc.gg/warcraftforever/bis-list/). The gear window shows the date of the bundled data.
 
 Inspired by Hellixoid's [BiS-Tooltip](https://www.curseforge.com/wow/addons/bis-tooltip).
+
+## License
+
+The original addon code is available under the [MIT License](LICENSE). The bundled recommendations are third-party data from WowTBC.gg.
