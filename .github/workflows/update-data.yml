@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths: ['.github/workflows/update-data.yml']
   schedule:
-    - cron: '17 9,21 * * *'
+    - cron: '17 9,17,21 * * *'
       timezone: Europe/Warsaw
   workflow_dispatch:
 
