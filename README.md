@@ -12,6 +12,8 @@ Browse best-in-slot gear recommendations and compare alternatives for **World of
 
 ## Getting started
 
+Download the latest addon from [CurseForge](https://www.curseforge.com/wow/addons/forever-bis-tooltip) or [GitHub Releases](https://github.com/Kachankapusta/ForeverBiSTooltip/releases/latest/download/ForeverBiSTooltip.zip).
+
 Place the `ForeverBiSTooltip` folder in `Interface/AddOns`, then open the gear browser with `/fbt`, `/bistooltip`, or the minimap button. Use the gear icon in the browser to open the addon's settings.
 
 | Click an enchant or gem | What it does |
