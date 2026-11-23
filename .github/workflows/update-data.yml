@@ -3,7 +3,7 @@ name: Update WowTBC data
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/update-data.yml']
+    paths: ['.github/workflows/update-data.yml', 'CHANGELOG.md']
   schedule:
     - cron: '17 3,9,15,21 * * *'
       timezone: Europe/Warsaw
@@ -77,50 +77,84 @@ jobs:
             echo '::error::The CURSEFORGE_PROJECT_ID Actions variable must be a positive integer.'
             exit 1
           fi
-          data_commit="$(git log -1 --format=%H -- Data.lua)"
-          if ! git log -1 --format=%B "$data_commit" | grep -Fxq "CurseForge-Project: $CURSEFORGE_PROJECT_ID"; then
-            echo 'No data update has been queued for this CurseForge project.'
+          release_commit="$(git log -1 --first-parent --format=%H -- Data.lua CHANGELOG.md)"
+          data_commit="$(git log -1 --first-parent --format=%H "$release_commit" -- Data.lua)"
+          code_commit="$(git log -1 --first-parent --format=%H "$release_commit" -- CHANGELOG.md)"
+          if [[ "$release_commit" != "$code_commit" ]] &&
+            ! git log -1 --format=%B "$data_commit" | grep -Fxq "CurseForge-Project: $CURSEFORGE_PROJECT_ID"; then
+            echo 'No release has been queued for this CurseForge project.'
             echo 'status=not_queued' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          receipt="curseforge/$CURSEFORGE_PROJECT_ID/$data_commit"
+          receipt="curseforge/$CURSEFORGE_PROJECT_ID/$release_commit"
           if git show-ref --verify --quiet "refs/tags/$receipt"; then
-            echo 'This data update has already been uploaded.'
+            echo 'This release has already been uploaded.'
             echo 'status=already_uploaded' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          previous_receipt="$(git describe --first-parent --abbrev=0 --match "curseforge/$CURSEFORGE_PROJECT_ID/*" "$release_commit" 2>/dev/null || true)"
           package_dir="$RUNNER_TEMP/forever-bis-release/ForeverBiSTooltip"
           mkdir -p "$package_dir"
           readme=README.md
-          if ! git cat-file -e "$data_commit:README.md" 2>/dev/null; then
+          if ! git cat-file -e "$release_commit:README.md" 2>/dev/null; then
             readme=README.txt
           fi
-          package_files=(ForeverBiSTooltip.toc Locale.lua Data.lua Core.lua Shopping.lua UI.lua ShoppingUI.lua Tooltip.lua "$readme")
-          if git cat-file -e "$data_commit:LICENSE" 2>/dev/null; then
+          addon_files=(ForeverBiSTooltip.toc Locale.lua Core.lua Shopping.lua UI.lua ShoppingUI.lua Tooltip.lua)
+          package_files=("${addon_files[@]}" Data.lua "$readme")
+          if git cat-file -e "$release_commit:LICENSE" 2>/dev/null; then
             package_files+=(LICENSE)
           fi
-          git archive "$data_commit" -- "${package_files[@]}" | tar -x -C "$package_dir"
+          git archive "$release_commit" -- "${package_files[@]}" | tar -x -C "$package_dir"
           toc="$package_dir/ForeverBiSTooltip.toc"
-          base_version="$(sed -nE 's/^## Version: +([0-9]+\.[0-9]+\.[0-9]+)\r?$/\1/p' "$toc")"
+          version_pattern='s/^## Version: +([0-9]+\.[0-9]+\.[0-9]+)\r?$/\1/p'
+          base_version="$(sed -nE "$version_pattern" "$toc")"
           if [[ -z "$base_version" ]]; then
-            echo '::error file=ForeverBiSTooltip.toc::Expected a version in X.Y.Z format for the selected data commit.'
+            echo '::error file=ForeverBiSTooltip.toc::Expected a version in X.Y.Z format for the release commit.'
             exit 1
           fi
-          version="$base_version.$(git rev-list --count "$data_commit")"
+          version="$base_version"
+          changelog="$RUNNER_TEMP/forever-bis-changelog.md"
+          : > "$changelog"
+          if [[ -n "$code_commit" ]] && { [[ -z "$previous_receipt" ]] || ! git merge-base --is-ancestor "$code_commit" "$previous_receipt"; }; then
+            previous_version=''
+            if [[ -n "$previous_receipt" ]]; then
+              previous_version="$(git show "$previous_receipt:ForeverBiSTooltip.toc" | sed -nE "$version_pattern")"
+            fi
+            git show "$release_commit:CHANGELOG.md" | awk -v version="$base_version" -v previous="$previous_version" '
+              { sub(/\r$/, "") }
+              $0 == "## " previous { released = 1 }
+              $0 == "## " version { include = 1 }
+              include && !released { print }
+            ' > "$changelog"
+            if ! grep -q '^- ' "$changelog"; then
+              echo "::error file=CHANGELOG.md::Add release notes under ## $base_version and bump the TOC version for code changes."
+              exit 1
+            fi
+          elif [[ -n "$previous_receipt" ]] && ! git diff --quiet "$previous_receipt" "$release_commit" -- "${addon_files[@]}"; then
+            echo '::error file=CHANGELOG.md::Add release notes and bump the TOC version before publishing code changes.'
+            exit 1
+          fi
+          if { [[ -z "$previous_receipt" ]] || ! git merge-base --is-ancestor "$data_commit" "$previous_receipt"; } &&
+            git log -1 --format=%B "$data_commit" | grep -Fxq "CurseForge-Project: $CURSEFORGE_PROJECT_ID"; then
+            version="$base_version.$(git rev-list --count "$release_commit")"
+            updated_at="$(TZ=Europe/Warsaw date --date="$(git show -s --format=%cI "$data_commit")" '+%Y-%m-%d %H:%M:%S (Europe/Warsaw, UTC%:z)')"
+            if [[ -s "$changelog" ]]; then
+              printf '\n' >> "$changelog"
+            fi
+            printf '## Data update\n\n- Updated WoW Forever Pre-Raid and Realistic BiS recommendations from WowTBC on %s.\n' "$updated_at" >> "$changelog"
+          fi
           sed -i -E "s/^## Version: .*/## Version: $version/" "$toc"
           touch -r "$package_dir/Data.lua" "$toc"
           zip_file="$RUNNER_TEMP/ForeverBiSTooltip-$version.zip"
           (cd "$(dirname "$package_dir")"; zip -q -X -r "$zip_file" ForeverBiSTooltip)
           unzip -tqq "$zip_file"
-          changelog="$RUNNER_TEMP/forever-bis-changelog.md"
-          printf '%s\n' 'Updated the WoW Forever Pre-Raid and Realistic recommendations from WowTBC.' > "$changelog"
           {
             echo 'status=ready'
             echo "zip=$zip_file"
             echo "version=$version"
             echo "changelog=$changelog"
             echo "receipt=$receipt"
-            echo "data_commit=$data_commit"
+            echo "release_commit=$release_commit"
           } >> "$GITHUB_OUTPUT"
       - name: Upload to CurseForge
         id: upload
@@ -142,7 +176,7 @@ jobs:
         env:
           RELEASE_FILE_ID: ${{ steps.upload.outputs.file_id }}
           RELEASE_RECEIPT: ${{ steps.release.outputs.receipt }}
-          RELEASE_COMMIT: ${{ steps.release.outputs.data_commit }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.release_commit }}
         shell: bash
         run: |
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
@@ -202,7 +236,7 @@ jobs:
           fi
 
           {
-            echo '### WowTBC update'
+            echo '### Forever BiS Tooltip update'
             echo
             printf 'Trigger: **%s**\n\n' "$GITHUB_EVENT_NAME"
             echo '| Step | Result |'

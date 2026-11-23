@@ -71,7 +71,7 @@ end
 
 local function QuantityText(quantity, isGold)
     if quantity == nil then return "—" end
-    if isGold then return (("%.4f"):format(quantity):gsub("0+$", ""):gsub("%.$", "")) end
+    if isGold then quantity = math.floor(quantity) end
     return tostring(quantity)
 end
 
