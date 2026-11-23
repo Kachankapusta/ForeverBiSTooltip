@@ -5,6 +5,7 @@ local listName = "Forever BiS Shopping"
 local materials, requested = {}, {}
 local exportStatus
 local refreshPending
+local legacyEnchants
 
 local function Public(value)
     if not issecretvalue or not issecretvalue(value) then return value end
@@ -26,10 +27,47 @@ local function ShoppingEntries()
     return ns.char and ns.char.shoppingEntries
 end
 
+local function EnhancementKey(entry)
+    return (entry.spellID and "spell" or entry.kind or "item") .. ":" .. entry.id
+end
+
+local function EnhancementTooltip(entry, isGem)
+    local itemID = entry.itemID or (isGem and entry.id) or entry.recipeItemID
+    if itemID then return "item", itemID end
+    if entry.spellID or entry.kind == "spell" then return "spell", entry.spellID or entry.id end
+    return "item", entry.id
+end
+
+local function LegacyTooltip(key)
+    if not legacyEnchants then
+        legacyEnchants = {}
+        for _, list in pairs(ns.Lists) do
+            for _, stage in pairs(list.stages) do
+                for _, enchant in pairs(stage.enchants or {}) do
+                    local enchantKey = EnhancementKey(enchant)
+                    local previous = legacyEnchants[enchantKey]
+                    if not previous or (enchant.itemID and not previous.itemID)
+                        or (enchant.recipeItemID and not (previous.itemID or previous.recipeItemID)) then
+                        legacyEnchants[enchantKey] = enchant
+                    end
+                end
+            end
+        end
+    end
+    local enchant = legacyEnchants[key]
+    if enchant then return EnhancementTooltip(enchant) end
+    local kind, id = key:match("^(%a+):(%d+)$")
+    if kind == "item" or kind == "spell" then return kind, tonumber(id) end
+end
+
 function ns.GetShoppingEntries()
     local result = {}
     for key, entry in pairs(ShoppingEntries() or {}) do
-        result[#result + 1] = { key = key, name = entry.name, quantity = entry.quantity }
+        local tooltipKind, tooltipID = entry.tooltipKind, entry.tooltipID
+        if not tooltipID then tooltipKind, tooltipID = LegacyTooltip(key) end
+        result[#result + 1] = {
+            key = key, name = entry.name, quantity = entry.quantity, tooltipKind = tooltipKind, tooltipID = tooltipID,
+        }
     end
     table.sort(result, function(a, b)
         if a.name == b.name then return a.key < b.key end
@@ -191,18 +229,17 @@ function ns.RefreshShoppingList()
     if ns.UpdateShoppingWindow then ns.UpdateShoppingWindow() end
 end
 
-local function EnhancementKey(entry)
-    return (entry.spellID and "spell" or entry.kind or "item") .. ":" .. entry.id
+local function CanAddShoppingMaterials()
+    if not InCombatLockdown() then return true end
+    print(listName .. ": " .. L["Add crafting materials after combat."])
+    return false
 end
 
 function ns.ShopForEnhancement(entry, isGem)
     if not ns.char or not entry.id then return false end
     local inputs = ShoppingMaterials(entry, isGem)
     if not inputs then return false end
-    if InCombatLockdown() then
-        print(listName .. ": " .. L["Add crafting materials after combat."])
-        return true
-    end
+    if not CanAddShoppingMaterials() then return true end
 
     local name = entry.name or Public(C_Item.GetItemNameByID(entry.itemID or entry.id)) or ("#" .. entry.id)
     local key = EnhancementKey(entry)
@@ -213,12 +250,22 @@ function ns.ShopForEnhancement(entry, isGem)
     end
     ns.db.shoppingListManaged = true
     local previous = entries[key]
+    local tooltipKind, tooltipID = EnhancementTooltip(entry, isGem)
     entries[key] = {
         name = name, quantity = (previous and previous.quantity or 0) + 1, gold = entry.requiredGold, materials = inputs,
+        tooltipKind = tooltipKind, tooltipID = tooltipID,
     }
     ns.RefreshShoppingList()
     print(addonName .. ": " .. L["Added %s to the shopping list."]:format(name))
     return true
+end
+
+function ns.IncreaseShoppingEntry(key)
+    local entries = ShoppingEntries()
+    local entry = entries and entries[key]
+    if not entry or not CanAddShoppingMaterials() then return end
+    entry.quantity = entry.quantity + 1
+    ns.RefreshShoppingList()
 end
 
 function ns.RemoveShoppingEntry(key)

@@ -32,10 +32,41 @@ local function PositionRow(row, y, height)
     row:Show()
 end
 
+local function ShowRowTooltip(row)
+    if not row.tooltipID then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    if row.tooltipKind == "spell" then
+        GameTooltip:SetSpellByID(row.tooltipID)
+    else
+        GameTooltip:SetItemByID(row.tooltipID)
+    end
+    GameTooltip:Show()
+end
+
+local function HideRowTooltip(row)
+    if GameTooltip:GetOwner() == row then GameTooltip:Hide() end
+end
+
+local function CreateTooltipRow()
+    local row = CreateFrame("Frame", nil, panel.content)
+    if row.SetMouseMotionEnabled then row:SetMouseMotionEnabled(true) else row:EnableMouse(true) end
+    row:SetScript("OnEnter", ShowRowTooltip)
+    row:SetScript("OnLeave", HideRowTooltip)
+    row:SetScript("OnHide", HideRowTooltip)
+    return row
+end
+
+local function SetRowTooltip(row, kind, id)
+    if row.tooltipID == id and row.tooltipKind == kind then return end
+    row.tooltipKind, row.tooltipID = kind, id
+    if not GameTooltip:IsShown() or GameTooltip:GetOwner() ~= row then return end
+    if id then ShowRowTooltip(row) else GameTooltip:Hide() end
+end
+
 local function GetMaterialRow(index)
     local row = materialRows[index]
     if row then return row end
-    row = CreateFrame("Frame", nil, panel.content)
+    row = CreateTooltipRow()
     materialRows[index] = row
     row.amount = Text(row, nil, 13)
     row.amount:SetPoint("TOPRIGHT", -3, -3)
@@ -55,16 +86,19 @@ end
 local function GetEntryRow(index)
     local row = entryRows[index]
     if row then return row end
-    row = CreateFrame("Frame", nil, panel.content)
+    row = CreateTooltipRow()
     entryRows[index] = row
-    row.remove = Button(row, "−", 22, 21)
-    row.remove:SetPoint("RIGHT", -3, 0)
-    row.remove:SetScript("OnClick", function() ns.RemoveShoppingEntry(row.key) end)
+    row.add = Button(row, "+", 22, 21)
+    row.add:SetPoint("RIGHT", -3, 0)
+    row.add:SetScript("OnClick", function() ns.IncreaseShoppingEntry(row.key) end)
     row.amount = Text(row, nil, 13)
-    row.amount:SetPoint("RIGHT", row.remove, "LEFT", -8, 0)
+    row.amount:SetPoint("RIGHT", row.add, "LEFT", -8, 0)
+    row.remove = Button(row, "−", 22, 21)
+    row.remove:SetPoint("RIGHT", row.amount, "LEFT", -8, 0)
+    row.remove:SetScript("OnClick", function() ns.RemoveShoppingEntry(row.key) end)
     row.name = Text(row, nil, 13)
     row.name:SetPoint("LEFT", 3, 0)
-    row.name:SetPoint("RIGHT", row.amount, "LEFT", -7, 0)
+    row.name:SetPoint("RIGHT", row.remove, "LEFT", -7, 0)
     row.name:SetWordWrap(false)
     return row
 end
@@ -88,6 +122,7 @@ function ns.UpdateShoppingWindow()
     for i, material in ipairs(materials) do
         local row = GetMaterialRow(i)
         local height = material.bindOnPickup and 35 or 22
+        SetRowTooltip(row, "item", material.id)
         PositionRow(row, y, height)
         row.name:SetText(material.isGold and L["Gold"] or material.name)
         row.binding:SetShown(material.bindOnPickup == true)
@@ -106,8 +141,9 @@ function ns.UpdateShoppingWindow()
     y = y + 32
     for i, entry in ipairs(entries) do
         local row = GetEntryRow(i)
-        PositionRow(row, y, 26)
         row.key = entry.key
+        SetRowTooltip(row, entry.tooltipKind, entry.tooltipID)
+        PositionRow(row, y, 26)
         row.name:SetText(entry.name)
         row.amount:SetText("×" .. entry.quantity)
         y = y + 26
