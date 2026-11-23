@@ -73,8 +73,12 @@ jobs:
           fi
           package_dir="$RUNNER_TEMP/forever-bis-release/ForeverBiSTooltip"
           mkdir -p "$package_dir"
+          readme=README.md
+          if ! git cat-file -e "$data_commit:README.md" 2>/dev/null; then
+            readme=README.txt
+          fi
           git archive "$data_commit" -- ForeverBiSTooltip.toc Locale.lua Data.lua Core.lua Shopping.lua \
-            UI.lua ShoppingUI.lua Tooltip.lua README.txt | tar -x -C "$package_dir"
+            UI.lua ShoppingUI.lua Tooltip.lua "$readme" | tar -x -C "$package_dir"
           toc="$package_dir/ForeverBiSTooltip.toc"
           base_version="$(sed -nE 's/^## Version: +([0-9]+\.[0-9]+\.[0-9]+)\r?$/\1/p' "$toc")"
           [[ -n "$base_version" ]]
