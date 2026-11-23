@@ -7,6 +7,10 @@ local exportStatus
 local refreshPending
 local legacyEnchants
 
+local function PrintShoppingMessage(prefix, message)
+    print("|cffa7d85e" .. prefix .. "|r: " .. message)
+end
+
 local function Public(value)
     if not issecretvalue or not issecretvalue(value) then return value end
 end
@@ -254,7 +258,7 @@ end
 
 local function CanAddShoppingMaterials()
     if not InCombatLockdown() then return true end
-    print(listName .. ": " .. L["Add crafting materials after combat."])
+    PrintShoppingMessage(listName, L["Add crafting materials after combat."])
     return false
 end
 
@@ -278,8 +282,12 @@ function ns.ShopForEnhancement(entry, isGem)
         name = name, quantity = (previous and previous.quantity or 0) + 1, gold = entry.requiredGold, materials = inputs,
         tooltipKind = tooltipKind, tooltipID = tooltipID,
     }
-    ns.RefreshShoppingList()
-    print(addonName .. ": " .. L["Added %s to the shopping list."]:format(name))
+    if ns.db.shoppingAutoOpen ~= false and ns.OpenShoppingWindow then
+        ns.OpenShoppingWindow()
+    else
+        ns.RefreshShoppingList()
+    end
+    PrintShoppingMessage(addonName, L["Added %s to the shopping list."]:format(name))
     return true
 end
 
@@ -308,7 +316,7 @@ function ns.RemoveShoppingEnhancement(entry)
     if not entry.id then return end
     local name = ns.RemoveShoppingEntry(EnhancementKey(entry))
     if name then
-        print(addonName .. ": " .. L["Removed one set for %s from the shopping list."]:format(name))
+        PrintShoppingMessage(addonName, L["Removed one set for %s from the shopping list."]:format(name))
     end
 end
 

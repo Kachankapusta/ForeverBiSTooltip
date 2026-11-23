@@ -558,6 +558,26 @@ local function Render()
     rendering = false
 end
 
+local function ApplyWindowPosition(position)
+    local width = type(position) == "table" and tonumber(position.width) or WIDTH
+    local height = type(position) == "table" and tonumber(position.height) or HEIGHT
+    window:ClearAllPoints()
+    if type(position) == "table" and type(position.point) == "string" and type(position.relativePoint) == "string"
+        and type(position.x) == "number" and type(position.y) == "number" then
+        window:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
+    else window:SetPoint("CENTER") end
+    window:SetSize(math.max(MIN_WIDTH, math.min(width or WIDTH, UIParent:GetWidth() - 20)),
+        math.max(MIN_HEIGHT, math.min(height or HEIGHT, UIParent:GetHeight() - 30)))
+end
+
+local function ResetMainWindow()
+    ns.char.windowPosition = nil
+    if not window then return end
+    window:StopMovingOrSizing()
+    window:SetUserPlaced(false)
+    ApplyWindowPosition()
+end
+
 local function RegisterSetting(key, name, default, description, inverted)
     inverted = inverted == true
     local setting = Settings.RegisterProxySetting(settingsCategory, "ForeverBiSTooltip_" .. key, "boolean",
@@ -567,11 +587,38 @@ local function RegisterSetting(key, name, default, description, inverted)
             ns.db[key] = value ~= inverted
             if key == "minimap" then
                 if minimapButton then minimapButton:SetShown(ns.db.minimap) end
-            else
+            elseif key == "shoppingMissingOnly" then
+                ns.UpdateShoppingWindow()
+            elseif key ~= "shoppingAutoOpen" and key ~= "shoppingCloseWithMain" then
                 ns.Refresh()
             end
         end)
     Settings.CreateCheckbox(settingsCategory, setting, L[description])
+end
+
+local function RegisterRankSetting()
+    if not Settings.CreateDropdown or not Settings.CreateControlTextContainer then return end
+    local setting = Settings.RegisterProxySetting(settingsCategory, "ForeverBiSTooltip_tooltipMaxRank", "number",
+        L["Ranks in tooltips"], 0, function()
+            return ns.db.tooltipMaxRank
+        end, function(value)
+            ns.db.tooltipMaxRank = value
+            ns.Refresh()
+        end)
+    Settings.CreateDropdown(settingsCategory, setting, function()
+        local options = Settings.CreateControlTextContainer()
+        options:Add(0, L["All ranks"])
+        options:Add(1, L["Top 1"])
+        options:Add(3, L["Top 3"])
+        options:Add(5, L["Top 5"])
+        return options:GetData()
+    end, L["Choose which BiS ranks to show in item tooltips."])
+end
+
+local function AddSettingsHeading(layout, name)
+    if layout and CreateSettingsListSectionHeaderInitializer then
+        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(L[name]))
+    end
 end
 
 local function RegisterSettings()
@@ -579,18 +626,37 @@ local function RegisterSettings()
         or not Settings.RegisterProxySetting or not Settings.CreateCheckbox
         or not Settings.RegisterAddOnCategory then return end
 
-    settingsCategory = Settings.RegisterVerticalLayoutCategory("Forever BiS Tooltip")
+    local layout
+    settingsCategory, layout = Settings.RegisterVerticalLayoutCategory("Forever BiS Tooltip")
+    AddSettingsHeading(layout, "Tooltip")
     RegisterSetting("tooltip", "Show tooltip", true, "Adds BiS recommendations to item tooltips.")
     RegisterSetting("allSpecs", "Only selected spec", true,
         "Choose a specialization in the window; tooltip filtering follows this selection.", true)
     RegisterSetting("ctrlOnly", "Ctrl only", false, "Adds BiS recommendations only while Ctrl is held.")
-    RegisterSetting("minimap", "Minimap button", true, "Shows the button that opens the BiS list.")
+    RegisterRankSetting()
+
+    AddSettingsHeading(layout, "Shopping list")
+    RegisterSetting("shoppingAutoOpen", "Automatically open the shopping list", true,
+        "Opens the shopping list when you add an enchant or gem.")
+    RegisterSetting("shoppingCloseWithMain", "Close the shopping list with the main window", true,
+        "Also applies when the shopping list is moved separately.")
+    RegisterSetting("shoppingMissingOnly", "Only missing reagents", false,
+        "Hides reagents you already have enough of in the shopping list.")
+
+    AddSettingsHeading(layout, "Windows")
+    RegisterSetting("minimap", "Minimap button", true, "Shows the minimap button for BiS, shopping, and settings.")
+    if layout and CreateSettingsButtonInitializer then
+        layout:AddInitializer(CreateSettingsButtonInitializer(L["Main window"], L["Reset"], ResetMainWindow,
+            L["Restores the default size and position of the main window."], true))
+        layout:AddInitializer(CreateSettingsButtonInitializer(L["Shopping list"], L["Reset"], ns.ResetShoppingWindow,
+            L["Restores the default shopping list size and docks it to the main window."], true))
+    end
     Settings.RegisterAddOnCategory(settingsCategory)
 end
 
 local function OpenSettings()
     if not settingsCategory or not Settings.OpenToCategory or InCombatLockdown() then return end
-    window:Hide()
+    if window then window:Hide() end
     Settings.OpenToCategory(settingsCategory:GetID())
 end
 
@@ -610,11 +676,7 @@ end
 local function CreateWindow()
     window = CreateFrame("Frame", "ForeverBiSTooltipFrame", UIParent, "BackdropTemplate")
     window:Hide()
-    local position = ns.char.windowPosition
-    local width = type(position) == "table" and tonumber(position.width) or WIDTH
-    local height = type(position) == "table" and tonumber(position.height) or HEIGHT
-    window:SetSize(math.max(MIN_WIDTH, math.min(width or WIDTH, UIParent:GetWidth() - 20)),
-        math.max(MIN_HEIGHT, math.min(height or HEIGHT, UIParent:GetHeight() - 30)))
+    ApplyWindowPosition(ns.char.windowPosition)
     window:SetResizable(true)
     window:SetResizeBounds(MIN_WIDTH, MIN_HEIGHT, UIParent:GetWidth(), UIParent:GetHeight())
     window:SetFrameStrata("HIGH")
@@ -626,10 +688,6 @@ local function CreateWindow()
     window:SetBackdrop(FRAME_BACKDROP)
     window:SetBackdropColor(0.105, 0.079, 0.060, 1)
     window:SetBackdropBorderColor(0.78, 0.58, 0.37, 1)
-    if type(position) == "table" and type(position.point) == "string" and type(position.relativePoint) == "string"
-        and type(position.x) == "number" and type(position.y) == "number" then
-        window:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
-    else window:SetPoint("CENTER") end
     window:SetScript("OnDragStart", function(self) CloseMenu(); self:StartMoving() end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); SaveWindowPosition() end)
     window:SetScript("OnMouseDown", CloseMenu)
@@ -637,6 +695,7 @@ local function CreateWindow()
     window:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
         SaveWindowPosition()
+        if ns.db.shoppingCloseWithMain ~= false then ns.CloseShoppingWindow() end
         CloseMenu()
         if sourceDialog then sourceDialog:Hide() end
         GameTooltip:Hide()
@@ -755,10 +814,18 @@ local function CreateWindow()
     local source = Button(window, "wowtbc.gg", 105)
     source:SetPoint("BOTTOMLEFT", 20, 20)
     source:SetScript("OnClick", ShowSource)
-    ns.InitShoppingUI(window, Text, Button, FRAME_BACKDROP)
+    ns.InitShoppingUI(window, Text, Button, FRAME_BACKDROP, TextWidth)
     window.shoppingButton = Button(window, L["Shopping"], 104)
     window.shoppingButton:SetPoint("BOTTOMRIGHT", -22, 20)
-    window.shoppingButton:SetScript("OnClick", function() CloseMenu(); ns.ToggleShoppingWindow() end)
+    window.shoppingButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    window.shoppingButton:SetScript("OnClick", function(_, button)
+        CloseMenu()
+        if button == "RightButton" then
+            ns.ResetShoppingWindow()
+        else
+            ns.ToggleShoppingWindow()
+        end
+    end)
     window.previous = Button(window, "<", 26)
     window.previous:SetPoint("BOTTOM", -56, 20)
     window.previous:SetScript("OnClick", function() CloseMenu(); equipmentPage = math.max(1, equipmentPage - 1); Render() end)
@@ -788,14 +855,14 @@ local function PositionMinimapButton()
 end
 
 function ns.InitUI()
-    ns.InitShoppingUI(nil, Text, Button, FRAME_BACKDROP)
+    ns.InitShoppingUI(nil, Text, Button, FRAME_BACKDROP, TextWidth)
     InitItemSources()
     RegisterSettings()
     if not Minimap or minimapButton then return end
     minimapButton = CreateFrame("Button", "ForeverBiSTooltipMinimapButton", Minimap)
     minimapButton:SetSize(31, 31)
     minimapButton:SetFrameStrata("MEDIUM")
-    minimapButton:RegisterForClicks("LeftButtonUp")
+    minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     minimapButton:RegisterForDrag("LeftButton")
     minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     local background = minimapButton:CreateTexture(nil, "BACKGROUND")
@@ -810,11 +877,22 @@ function ns.InitUI()
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     border:SetSize(53, 53)
     border:SetPoint("TOPLEFT")
-    minimapButton:SetScript("OnClick", function() ns.ToggleUI() end)
+    minimapButton:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            if not window then CreateWindow() end
+            ns.ToggleShoppingWindow()
+        elseif IsShiftKeyDown() then
+            OpenSettings()
+        else
+            ns.ToggleUI()
+        end
+    end)
     minimapButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("Forever BiS Tooltip")
-        GameTooltip:AddLine(L["Click to open or close."], 1, 1, 1)
+        GameTooltip:AddLine(L["Left-click to open or close the BiS window."], 1, 1, 1)
+        GameTooltip:AddLine(L["Right-click to open or close the shopping list."], 1, 1, 1)
+        GameTooltip:AddLine(L["Shift-left-click to open settings."], 1, 1, 1)
         GameTooltip:AddLine(L["Drag to move."], 0.65, 0.7, 0.8)
         GameTooltip:Show()
     end)

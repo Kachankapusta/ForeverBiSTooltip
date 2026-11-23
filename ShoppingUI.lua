@@ -1,10 +1,18 @@
 local _, ns = ...
 
 local L = ns.L
-local Text, Button, frameBackdrop
+local Text, Button, frameBackdrop, TextWidth
 local panel, mainWindow, auctionButton
 local materialRows, entryRows = {}, {}
 local hookedAuctions = {}
+local WIDTH, HEIGHT = 490, 470
+local MIN_WIDTH, MIN_HEIGHT = 320, 240
+local SCROLL_LEFT, SCROLL_RIGHT = 20, 38
+local ROW_INSET, NAME_GAP = 3, 7
+local MATERIAL_AMOUNT_WIDTH = 128
+local QUANTITY_BUTTON_WIDTH, QUANTITY_GAP = 22, 8
+local MATERIAL_RESERVED_WIDTH = 2 * ROW_INSET + NAME_GAP + MATERIAL_AMOUNT_WIDTH
+local ENTRY_RESERVED_WIDTH = 2 * (ROW_INSET + QUANTITY_BUTTON_WIDTH + QUANTITY_GAP) + NAME_GAP
 
 local function AuctionTabOffset(auction)
     local offset = 52
@@ -32,14 +40,9 @@ local function PositionRow(row, y, height)
     row:Show()
 end
 
-local function ShowRowTooltip(row)
-    if not row.tooltipID then return end
+local function ShowRowTooltip(row, link)
     GameTooltip:SetOwner(row, "ANCHOR_CURSOR")
-    if row.tooltipKind == "spell" then
-        GameTooltip:SetSpellByID(row.tooltipID)
-    else
-        GameTooltip:SetItemByID(row.tooltipID)
-    end
+    GameTooltip:SetHyperlink(link)
     GameTooltip:Show()
 end
 
@@ -47,34 +50,34 @@ local function HideRowTooltip(row)
     if GameTooltip:GetOwner() == row then GameTooltip:Hide() end
 end
 
-local function CreateTooltipRow()
-    local row = CreateFrame("Frame", nil, panel.content)
-    if row.SetMouseMotionEnabled then row:SetMouseMotionEnabled(true) else row:EnableMouse(true) end
-    row:SetScript("OnEnter", ShowRowTooltip)
-    row:SetScript("OnLeave", HideRowTooltip)
+local function CreateLinkRow()
+    local row = CreateFrame("Frame", nil, panel.content, "InlineHyperlinkFrameTemplate")
+    row:EnableMouse(true)
+    row:SetHyperlinksEnabled(true)
+    row:SetScript("OnHyperlinkEnter", ShowRowTooltip)
+    row:SetScript("OnHyperlinkLeave", HideRowTooltip)
     row:SetScript("OnHide", HideRowTooltip)
     return row
 end
 
-local function SetRowTooltip(row, kind, id)
-    if row.tooltipID == id and row.tooltipKind == kind then return end
-    row.tooltipKind, row.tooltipID = kind, id
-    if not GameTooltip:IsShown() or GameTooltip:GetOwner() ~= row then return end
-    if id then ShowRowTooltip(row) else GameTooltip:Hide() end
+local function SetRowName(row, text)
+    if row.name:GetText() == text then return end
+    HideRowTooltip(row)
+    row.name:SetText(text)
 end
 
 local function GetMaterialRow(index)
     local row = materialRows[index]
     if row then return row end
-    row = CreateTooltipRow()
+    row = CreateLinkRow()
     materialRows[index] = row
     row.amount = Text(row, nil, 13)
-    row.amount:SetPoint("TOPRIGHT", -3, -3)
-    row.amount:SetWidth(128)
+    row.amount:SetPoint("TOPRIGHT", -ROW_INSET, -3)
+    row.amount:SetWidth(MATERIAL_AMOUNT_WIDTH)
     row.amount:SetJustifyH("RIGHT")
     row.name = Text(row, nil, 13)
-    row.name:SetPoint("TOPLEFT", 3, -3)
-    row.name:SetPoint("TOPRIGHT", row.amount, "TOPLEFT", -7, 0)
+    row.name:SetPoint("TOPLEFT", ROW_INSET, -3)
+    row.name:SetPoint("TOPRIGHT", row.amount, "TOPLEFT", -NAME_GAP, 0)
     row.name:SetWordWrap(false)
     row.binding = Text(row, nil, 11)
     row.binding:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -1)
@@ -86,19 +89,19 @@ end
 local function GetEntryRow(index)
     local row = entryRows[index]
     if row then return row end
-    row = CreateTooltipRow()
+    row = CreateLinkRow()
     entryRows[index] = row
-    row.add = Button(row, "+", 22, 21)
-    row.add:SetPoint("RIGHT", -3, 0)
+    row.add = Button(row, "+", QUANTITY_BUTTON_WIDTH, 21)
+    row.add:SetPoint("RIGHT", -ROW_INSET, 0)
     row.add:SetScript("OnClick", function() ns.IncreaseShoppingEntry(row.key) end)
     row.amount = Text(row, nil, 13)
-    row.amount:SetPoint("RIGHT", row.add, "LEFT", -8, 0)
-    row.remove = Button(row, "−", 22, 21)
-    row.remove:SetPoint("RIGHT", row.amount, "LEFT", -8, 0)
+    row.amount:SetPoint("RIGHT", row.add, "LEFT", -QUANTITY_GAP, 0)
+    row.remove = Button(row, "−", QUANTITY_BUTTON_WIDTH, 21)
+    row.remove:SetPoint("RIGHT", row.amount, "LEFT", -QUANTITY_GAP, 0)
     row.remove:SetScript("OnClick", function() ns.RemoveShoppingEntry(row.key) end)
     row.name = Text(row, nil, 13)
-    row.name:SetPoint("LEFT", 3, 0)
-    row.name:SetPoint("RIGHT", row.remove, "LEFT", -7, 0)
+    row.name:SetPoint("LEFT", ROW_INSET, 0)
+    row.name:SetPoint("RIGHT", row.remove, "LEFT", -NAME_GAP, 0)
     row.name:SetWordWrap(false)
     return row
 end
@@ -107,6 +110,28 @@ local function QuantityText(quantity, isGold)
     if quantity == nil then return "—" end
     if isGold then quantity = math.floor(quantity) end
     return tostring(quantity)
+end
+
+local function ClampScroll()
+    local maxScroll = math.max(0, panel.content:GetHeight() - panel.scroll:GetHeight())
+    if panel.scroll:GetVerticalScroll() > maxScroll then panel.scroll:SetVerticalScroll(maxScroll) end
+end
+
+local function PanelLimits()
+    local maxWidth = math.max(1, UIParent:GetWidth() - 20)
+    local maxHeight = math.max(1, UIParent:GetHeight() - 20)
+    return math.min(MIN_WIDTH, maxWidth), math.min(MIN_HEIGHT, maxHeight), maxWidth, maxHeight
+end
+
+local function FullRowWidth(name, reservedWidth, maxContentWidth)
+    if name:GetTextScale() ~= 1 then name:SetTextScale(1) end
+    local width = TextWidth(name)
+    local available = math.max(1, maxContentWidth - reservedWidth - 2)
+    if width > available then
+        name:SetTextScale(available / width)
+        width = available
+    end
+    return width + reservedWidth + 2
 end
 
 function ns.UpdateShoppingWindow()
@@ -118,23 +143,33 @@ function ns.UpdateShoppingWindow()
     panel.scroll:SetShown(not empty)
     panel.status:SetText(L[ns.GetShoppingExportStatus() or ""])
 
+    local minWidth, minHeight, maxWidth, maxHeight = PanelLimits()
+    local scrollPadding = SCROLL_LEFT + SCROLL_RIGHT
+    local maxContentWidth = math.max(1, maxWidth - scrollPadding)
+    local requiredContentWidth = 0
+    local missingOnly = ns.db.shoppingMissingOnly
+    local shownMaterials = 0
     local y = 26
-    for i, material in ipairs(materials) do
-        local row = GetMaterialRow(i)
-        local height = material.bindOnPickup and 35 or 22
-        SetRowTooltip(row, "item", material.id)
-        PositionRow(row, y, height)
-        row.name:SetText(material.link or (material.isGold and L["Gold"] or material.name))
-        row.binding:SetShown(material.bindOnPickup == true)
-        row.amount:SetText(QuantityText(material.owned, material.isGold) .. " / " .. QuantityText(material.required, material.isGold))
-        if material.owned and material.owned >= material.required then
-            row.amount:SetTextColor(0.60, 0.87, 0.63)
-        else
-            row.amount:SetTextColor(0.96, 0.84, 0.67)
+    for _, material in ipairs(materials) do
+        local hasEnough = material.owned and material.owned >= material.required
+        if not missingOnly or material.isGold or not hasEnough then
+            shownMaterials = shownMaterials + 1
+            local row = GetMaterialRow(shownMaterials)
+            local height = material.bindOnPickup and 35 or 22
+            PositionRow(row, y, height)
+            SetRowName(row, material.link or (material.isGold and L["Gold"] or material.name))
+            row.binding:SetShown(material.bindOnPickup == true)
+            row.amount:SetText(QuantityText(material.owned, material.isGold) .. " / " .. QuantityText(material.required, material.isGold))
+            requiredContentWidth = math.max(requiredContentWidth, FullRowWidth(row.name, MATERIAL_RESERVED_WIDTH, maxContentWidth))
+            if hasEnough then
+                row.amount:SetTextColor(0.60, 0.87, 0.63)
+            else
+                row.amount:SetTextColor(0.96, 0.84, 0.67)
+            end
+            y = y + height
         end
-        y = y + height
     end
-    for i = #materials + 1, #materialRows do materialRows[i]:Hide() end
+    for i = shownMaterials + 1, #materialRows do materialRows[i]:Hide() end
 
     panel.entriesHeader:ClearAllPoints()
     panel.entriesHeader:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 3, -y - 10)
@@ -142,37 +177,111 @@ function ns.UpdateShoppingWindow()
     for i, entry in ipairs(entries) do
         local row = GetEntryRow(i)
         row.key = entry.key
-        SetRowTooltip(row, entry.tooltipKind, entry.tooltipID)
         PositionRow(row, y, 26)
-        row.name:SetText(entry.link or entry.name)
+        SetRowName(row, entry.link or entry.name)
         row.amount:SetText("×" .. entry.quantity)
+        local reservedWidth = ENTRY_RESERVED_WIDTH + TextWidth(row.amount)
+        requiredContentWidth = math.max(requiredContentWidth, FullRowWidth(row.name, reservedWidth, maxContentWidth))
         y = y + 26
     end
     for i = #entries + 1, #entryRows do entryRows[i]:Hide() end
     panel.content:SetHeight(y + 4)
-    local maxScroll = math.max(0, y + 4 - panel.scroll:GetHeight())
-    if panel.scroll:GetVerticalScroll() > maxScroll then panel.scroll:SetVerticalScroll(maxScroll) end
+    minWidth = math.min(maxWidth, math.max(minWidth, requiredContentWidth + scrollPadding))
+    panel:SetResizeBounds(minWidth, minHeight, maxWidth, maxHeight)
+    local currentWidth = panel:GetWidth()
+    local width = math.max(minWidth, math.min(currentWidth, maxWidth))
+    if width ~= currentWidth then panel:SetWidth(width) end
+    ClampScroll()
+end
+
+local function ShoppingWindowPosition()
+    local position = ns.char.shoppingWindowPosition
+    if type(position) == "table" then return position end
+end
+
+local function SetPanelSize(position)
+    local minWidth, minHeight, maxWidth, maxHeight = PanelLimits()
+    local width = position and tonumber(position.width) or WIDTH
+    local height = position and tonumber(position.height) or HEIGHT
+    panel:SetResizeBounds(minWidth, minHeight, maxWidth, maxHeight)
+    panel:SetSize(math.max(minWidth, math.min(width, maxWidth)), math.max(minHeight, math.min(height, maxHeight)))
+end
+
+local function HasDetachedPosition(position)
+    return position and type(position.x) == "number" and type(position.y) == "number"
+end
+
+local function SetStandalonePoint(position)
+    if HasDetachedPosition(position) then
+        panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", position.x, position.y)
+    elseif panel.anchor == UIParent then
+        panel:SetPoint("CENTER")
+    else
+        panel:SetPoint("TOPLEFT", panel.anchor, "TOPRIGHT", 8, 0)
+    end
+end
+
+local function FinishInteraction()
+    local interaction = panel.interaction
+    if not interaction then return end
+    panel.interaction = nil
+    panel:StopMovingOrSizing()
+    panel:SetUserPlaced(false)
+    local position = ShoppingWindowPosition() or {}
+    position.width, position.height = panel:GetWidth(), panel:GetHeight()
+    if interaction == "move" or HasDetachedPosition(position) then
+        local left, top = panel:GetLeft(), panel:GetTop()
+        local originX, originY = UIParent:GetLeft(), UIParent:GetBottom()
+        if left and top and originX and originY then
+            position.x, position.y = left - originX, top - originY
+        end
+    end
+    ns.char.shoppingWindowPosition = position
+    panel:ClearAllPoints()
+    SetStandalonePoint(position)
+end
+
+local function ShoppingAnchor(auction)
+    return auction or mainWindow or UIParent
+end
+
+local function ApplyPanelLayout(anchor, auction)
+    FinishInteraction()
+    panel.anchor, panel.auction = anchor, auction
+    panel:ClearAllPoints()
+    if auction then
+        SetPanelSize()
+        local gap = AuctionTabOffset(auction) > 52 and auctionButton:GetWidth() or 0
+        panel:SetPoint("TOPLEFT", auction, "TOPRIGHT", gap, -1)
+        panel:SetPoint("BOTTOMLEFT", auction, "BOTTOMRIGHT", gap, 0)
+    else
+        local position = ShoppingWindowPosition()
+        SetPanelSize(position)
+        SetStandalonePoint(position)
+    end
+    panel.resize:SetShown(not auction)
 end
 
 local function CreatePanel()
-    local width = math.min(490, UIParent:GetWidth() - 20)
-    local height = math.min(470, UIParent:GetHeight() - 20)
     panel = CreateFrame("Frame", "ForeverBiSTooltipShoppingFrame", UIParent, "BackdropTemplate")
     panel:Hide()
-    panel:SetSize(width, height)
-    panel.undockedHeight = height
+    panel:SetResizable(true)
+    SetPanelSize()
     panel:SetFrameStrata("DIALOG")
     panel:SetToplevel(true)
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)
+    panel:SetUserPlaced(false)
     panel:EnableMouse(true)
     panel:RegisterForDrag("LeftButton")
     panel:SetScript("OnDragStart", function(self)
-        if not self.auction then self:StartMoving() end
+        if self.auction or self.interaction then return end
+        self.interaction = "move"
+        self:StartMoving()
     end)
-    panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
-    panel:SetScript("OnHide", function(self)
-        self:StopMovingOrSizing()
+    panel:SetScript("OnDragStop", FinishInteraction)
+    panel:SetScript("OnHide", function()
+        FinishInteraction()
         UpdateAuctionTab()
     end)
     panel:SetScript("OnShow", function() ns.RefreshShoppingList() end)
@@ -191,11 +300,15 @@ local function CreatePanel()
     close:SetScript("OnClick", function() panel:Hide() end)
 
     panel.scroll = CreateFrame("ScrollFrame", "ForeverBiSTooltipShoppingScrollFrame", panel, "UIPanelScrollFrameTemplate")
-    panel.scroll:SetPoint("TOPLEFT", 20, -52)
-    panel.scroll:SetPoint("BOTTOMRIGHT", -38, 55)
+    panel.scroll:SetPoint("TOPLEFT", SCROLL_LEFT, -52)
+    panel.scroll:SetPoint("BOTTOMRIGHT", -SCROLL_RIGHT, 55)
     panel.content = CreateFrame("Frame", nil, panel.scroll)
-    panel.content:SetSize(width - 58, 1)
+    panel.content:SetSize(math.max(1, panel:GetWidth() - SCROLL_LEFT - SCROLL_RIGHT), 1)
     panel.scroll:SetScrollChild(panel.content)
+    panel.scroll:HookScript("OnSizeChanged", function(_, width)
+        panel.content:SetWidth(math.max(1, width))
+        ClampScroll()
+    end)
 
     local materialsHeader = Text(panel.content, "GameFontNormal", 13)
     materialsHeader:SetPoint("TOPLEFT", 3, -3)
@@ -223,36 +336,58 @@ local function CreatePanel()
     panel.status:SetPoint("BOTTOMLEFT", 20, 20)
     panel.status:SetPoint("BOTTOMRIGHT", -154, 20)
     panel.status:SetTextColor(0.80, 0.70, 0.57)
+
+    panel.resize = CreateFrame("Button", nil, panel)
+    panel.resize:SetSize(19, 19)
+    panel.resize:SetPoint("BOTTOMRIGHT", -2, 2)
+    panel.resize:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    panel.resize:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    panel.resize:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" or panel.auction or panel.interaction then return end
+        panel.interaction = "resize"
+        panel:StartSizing("BOTTOMRIGHT")
+    end)
+    panel.resize:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" and panel.interaction == "resize" then FinishInteraction() end
+    end)
 end
 
-function ns.InitShoppingUI(window, text, button, backdrop)
-    mainWindow, Text, Button, frameBackdrop = window, text, button, backdrop
+function ns.InitShoppingUI(window, text, button, backdrop, textWidth)
+    mainWindow, Text, Button, frameBackdrop, TextWidth = window, text, button, backdrop, textWidth
+end
+
+local function ShowShoppingWindow(auction)
+    if not panel then CreatePanel() end
+    local anchor = ShoppingAnchor(auction)
+    if auction or panel.anchor ~= anchor then ApplyPanelLayout(anchor, auction) end
+    if panel:IsShown() then ns.UpdateShoppingWindow() else panel:Show() end
+    UpdateAuctionTab()
 end
 
 function ns.ToggleShoppingWindow(auction)
-    if not panel then CreatePanel() end
-    local anchor = auction or mainWindow or UIParent
-    if panel.anchor == anchor and panel:IsShown() then
+    local anchor = ShoppingAnchor(auction)
+    if panel and panel.anchor == anchor and panel:IsShown() then
         panel:Hide()
-        return
+    else
+        ShowShoppingWindow(auction)
     end
-    if auction or panel.anchor ~= anchor then
-        panel.anchor, panel.auction = anchor, auction
-        panel:ClearAllPoints()
-        if auction then
-            local gap = AuctionTabOffset(auction) > 52 and auctionButton:GetWidth() or 0
-            panel:SetPoint("TOPLEFT", auction, "TOPRIGHT", gap, -1)
-            panel:SetPoint("BOTTOMLEFT", auction, "BOTTOMRIGHT", gap, 0)
-        elseif anchor == UIParent then
-            panel:SetHeight(panel.undockedHeight)
-            panel:SetPoint("CENTER")
-        else
-            panel:SetHeight(panel.undockedHeight)
-            panel:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0)
-        end
-    end
-    if panel:IsShown() then ns.UpdateShoppingWindow() else panel:Show() end
+end
+
+function ns.OpenShoppingWindow()
+    if panel and panel:IsShown() then ns.RefreshShoppingList() else ShowShoppingWindow() end
+end
+
+function ns.CloseShoppingWindow()
+    if panel then panel:Hide() end
+end
+
+function ns.ResetShoppingWindow()
+    if panel then FinishInteraction() end
+    ns.char.shoppingWindowPosition = nil
+    if not panel then return end
+    ApplyPanelLayout(mainWindow or UIParent)
     UpdateAuctionTab()
+    if panel:IsShown() then ns.UpdateShoppingWindow() end
 end
 
 local function ShowAuctionButton()

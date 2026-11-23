@@ -112,12 +112,31 @@ local function AddSection(tooltip, data)
     local matches = ns.GetMatches(itemID)
     if not matches or #matches == 0 then return end
 
+    local rankLimit = ns.db.tooltipMaxRank
+    if rankLimit == 1 or rankLimit == 3 or rankLimit == 5 then
+        local filtered = {}
+        for _, match in ipairs(matches) do
+            if match.rank <= rankLimit then filtered[#filtered + 1] = match end
+        end
+        matches = filtered
+    end
+
+    local state = ns.GetItemState(itemID)
+    local status = state == "equipped" and ns.L["Equipped"] or state == "bags" and ns.L["In bags"]
+    if #matches == 0 and not status then return end
     local lineCount = tooltip:NumLines()
     if Secret(lineCount) or type(lineCount) ~= "number" then return end
+    tooltip:AddLine(" ")
+    if #matches == 0 then
+        tooltip:AddLine(status, 0.3, 1, 0.4)
+        markers[tooltip] = { id = itemID, line = lineCount + 2, header = status }
+        tooltip:Show()
+        return
+    end
+
     local header = "Forever BiS"
     local stage = ns.GetStageLabel(ns.char.stage)
     if ns.char.realistic then stage = stage .. " · " .. ns.L["Realistic"] end
-    tooltip:AddLine(" ")
     tooltip:AddDoubleLine(header, stage, 0.98, 0.79, 0.36, 0.98, 0.79, 0.36)
     markers[tooltip] = { id = itemID, line = lineCount + 2, header = header }
 
@@ -154,12 +173,7 @@ local function AddSection(tooltip, data)
         end
     end
 
-    local state = ns.GetItemState(itemID)
-    if state == "equipped" then
-        tooltip:AddLine(ns.L["Equipped"], 0.3, 1, 0.4)
-    elseif state == "bags" then
-        tooltip:AddLine(ns.L["In bags"], 0.3, 1, 0.4)
-    end
+    if status then tooltip:AddLine(status, 0.3, 1, 0.4) end
     tooltip:Show()
 end
 

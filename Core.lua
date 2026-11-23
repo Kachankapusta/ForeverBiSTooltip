@@ -218,9 +218,14 @@ local function Initialize()
     if type(ForeverBiSTooltipDB) ~= "table" then ForeverBiSTooltipDB = {} end
     if type(ForeverBiSTooltipCharDB) ~= "table" then ForeverBiSTooltipCharDB = {} end
     ns.db, ns.char = ForeverBiSTooltipDB, ForeverBiSTooltipCharDB
-    for key, value in pairs({ tooltip = true, allSpecs = false, ctrlOnly = false, minimap = true }) do
+    for key, value in pairs({
+        tooltip = true, allSpecs = false, ctrlOnly = false, minimap = true,
+        shoppingAutoOpen = true, shoppingMissingOnly = false, shoppingCloseWithMain = true,
+    }) do
         if type(ns.db[key]) ~= "boolean" then ns.db[key] = value end
     end
+    local rankLimit = ns.db.tooltipMaxRank
+    if rankLimit ~= 1 and rankLimit ~= 3 and rankLimit ~= 5 then ns.db.tooltipMaxRank = 0 end
     if not specByID[ns.char.spec] then
         local _, classID = UnitClass("player")
         for _, spec in ipairs(ns.Specs) do
